@@ -3,6 +3,6 @@ fastapi
 uvicorn
 openai
 python-dotenv
-# pydantic<2.10
+pydantic>=2.10.3,<3.0.0
 annotated-types<0.7
-
+starlette

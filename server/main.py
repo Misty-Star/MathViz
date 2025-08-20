@@ -25,12 +25,10 @@ try:
     from fastapi import FastAPI
     from fastapi.staticfiles import StaticFiles
     import uvicorn
-    from starlette.routing import ASGIRoute
 except Exception:
     FastAPI = None  # type: ignore
     StaticFiles = None  # type: ignore
     uvicorn = None  # type: ignore
-    ASGIRoute = None  # type: ignore
 
 
 # Optional OpenAI-compatible client
@@ -137,26 +135,13 @@ def create_http_app() -> Optional[object]:
     app.mount("/images", StaticFiles(directory=str(IMAGES_DIR), html=False), name="images")
     logger.info("Mounted static images at /images -> %s", IMAGES_DIR)
 
-    # Legacy SSE transport endpoints
-    if SseServerTransport is not None and ASGIRoute is not None:
-        sse_transport = SseServerTransport("/messages")
-
-        async def handle_sse(scope, receive, send):
-            logger.info("SSE connection established at /sse")
-            async with sse_transport.connect_sse(scope, receive, send) as streams:
-                # FastMCP implements the same run signature as low-level Server
-                await mcp.run(streams[0], streams[1], mcp.create_initialization_options())
-
-        async def handle_messages(scope, receive, send):
-            logger.debug("Handling POST /messages (JSON-RPC)")
-            await sse_transport.handle_post_message(scope, receive, send)
-
-        # Mount ASGI endpoints using Starlette ASGIRoute (ASGI app signature)
-        app.router.routes.append(ASGIRoute("/sse", handle_sse))
-        app.router.routes.append(ASGIRoute("/messages", handle_messages, methods=["POST"]))
+    # Mount FastMCP's official SSE Starlette app to avoid transport mismatches
+    try:
+        starlette_sse_app = mcp.sse_app()
+        app.mount("/", starlette_sse_app)
         logger.info("SSE endpoints enabled: GET /sse, POST /messages")
-    else:
-        logger.warning("SSE transport not available; only static files will be served if HTTP runs")
+    except Exception as e:
+        logger.warning("Failed to mount SSE app: %s", e)
 
     return app
 
