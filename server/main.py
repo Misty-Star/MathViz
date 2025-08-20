@@ -48,6 +48,8 @@ IMAGES_DIR = PUBLIC_DIR / "images"
 
 _http_server_started = False
 _http_server_lock = threading.Lock()
+# When running main FastAPI/uvicorn, prevent background HTTP from starting again
+_primary_http_mode = False
 
 try:
     from dotenv import load_dotenv  # type: ignore
@@ -148,6 +150,11 @@ def create_http_app() -> Optional[object]:
 
 def start_http_server_if_needed() -> None:
     global _http_server_started
+    global _primary_http_mode
+
+    # If the primary HTTP server is already running (main uvicorn), do nothing
+    if _primary_http_mode:
+        return
 
     if FastAPI is None or uvicorn is None or StaticFiles is None:
         # HTTP server deps missing; links will be file:// URLs
@@ -420,6 +427,7 @@ if __name__ == "__main__":
     if FastAPI is not None and uvicorn is not None and StaticFiles is not None:
         app = create_http_app()
         assert app is not None
+        _primary_http_mode = True
         uvicorn.run(app, host=SSE_HOST, port=SSE_PORT, log_level="info")
     else:
         # Fallback: run stdio (for environments without HTTP stack)
