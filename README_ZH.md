@@ -61,7 +61,7 @@ MathViz/
 克隆仓库并使用虚拟环境安装所需的 Python 依赖项：
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Misty-Star/MathViz.git
 cd MathViz
 uv venv
 source .venv/bin/activate  # Windows 上使用 `.venv\Scripts\activate`

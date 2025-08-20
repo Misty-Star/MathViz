@@ -61,7 +61,7 @@ MathViz/
 Clone the repository and use a virtual environment to install the required Python dependencies:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Misty-Star/MathViz.git
 cd MathViz
 uv venv
 source .venv/bin/activate  # On Windows, use `.venv\Scripts\activate`
