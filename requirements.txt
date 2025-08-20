@@ -1,0 +1,8 @@
+mcp
+fastapi
+uvicorn
+openai
+python-dotenv
+# pydantic<2.10
+annotated-types<0.7
+
