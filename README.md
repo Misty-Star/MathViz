@@ -55,6 +55,7 @@ docker build -t mathviz-runner:latest .
 - `MCP_DOCKER_IMAGE`: 可选，Docker 镜像名，默认 `python:3.11-slim`
 - `MCP_DOCKER_INSTALL_DEPS`: 可选，`true|false`，默认自动判断
 - `MCP_ENV_FILE`: 可选，指定环境变量文件路径；若未设置则读取项目根目录 `.env`
+- `MCP_LOG_LEVEL`: 可选，控制日志级别，可选值为 `DEBUG`, `INFO`, `WARNING`, `ERROR`，默认 `INFO`
 
 ## 环境变量文件示例
 
@@ -70,6 +71,8 @@ MCP_DOCKER_INSTALL_DEPS=false
 # 可自定义 SSE 和静态服务监听地址：
 # MCP_SSE_HOST=127.0.0.1
 # MCP_SSE_PORT=8787
+# 可调整日志级别
+# MCP_LOG_LEVEL=DEBUG
 ```
 
 也可以使用其他路径的 env 文件并设置：
@@ -112,6 +115,25 @@ python -m server.main
 pip uninstall fastapi uvicorn
 # 运行服务器
 python -m server.main
+```
+
+## 日志记录
+
+服务器会将运行日志输出到标准错误流（stderr），以便于调试和监控。日志内容包括服务器启动、SSE 连接、工具调用、Docker 执行等关键事件。
+
+可以通过 `MCP_LOG_LEVEL` 环境变量控制日志的详细程度。例如，要查看更详细的 `DEBUG` 级别日志：
+
+```bash
+# Windows (CMD)
+set MCP_LOG_LEVEL=DEBUG
+python -m server.main
+
+# Windows (PowerShell)
+$env:MCP_LOG_LEVEL="DEBUG"
+python -m server.main
+
+# Linux / macOS
+MCP_LOG_LEVEL=DEBUG python -m server.main
 ```
 
 ## 工具

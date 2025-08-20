@@ -9,6 +9,7 @@ import tempfile
 import threading
 import subprocess
 import shutil
+import logging
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -101,6 +102,25 @@ STATIC_PORT = int(os.environ.get("MCP_ASSETS_PORT", "8787"))
 SSE_HOST = os.environ.get("MCP_SSE_HOST", STATIC_HOST)
 SSE_PORT = int(os.environ.get("MCP_SSE_PORT", str(STATIC_PORT)))
 
+# Configure logging (stderr only, safe for stdio transport)
+logger = logging.getLogger("mathviz")
+if not logger.handlers:
+    _handler = logging.StreamHandler(sys.stderr)
+    _handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    logger.addHandler(_handler)
+_level = os.environ.get("MCP_LOG_LEVEL", "INFO").upper()
+try:
+    logger.setLevel(getattr(logging, _level, logging.INFO))
+except Exception:
+    logger.setLevel(logging.INFO)
+logger.info(
+    "MathViz starting with HTTP host=%s port=%s (SSE host=%s port=%s)",
+    STATIC_HOST,
+    STATIC_PORT,
+    SSE_HOST,
+    SSE_PORT,
+)
+
 
 def ensure_dirs() -> None:
     PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -109,27 +129,34 @@ def ensure_dirs() -> None:
 
 def create_http_app() -> Optional[object]:
     if FastAPI is None or StaticFiles is None:
+        logger.warning("FastAPI/StaticFiles not available; HTTP/SSE server disabled")
         return None
 
     ensure_dirs()
     app = FastAPI(title=f"{SERVER_NAME} (SSE MCP Server)")
     app.mount("/images", StaticFiles(directory=str(IMAGES_DIR), html=False), name="images")
+    logger.info("Mounted static images at /images -> %s", IMAGES_DIR)
 
     # Legacy SSE transport endpoints
     if SseServerTransport is not None and ASGIRoute is not None:
         sse_transport = SseServerTransport("/messages")
 
         async def handle_sse(scope, receive, send):
+            logger.info("SSE connection established at /sse")
             async with sse_transport.connect_sse(scope, receive, send) as streams:
                 # FastMCP implements the same run signature as low-level Server
                 await mcp.run(streams[0], streams[1], mcp.create_initialization_options())
 
         async def handle_messages(scope, receive, send):
+            logger.debug("Handling POST /messages (JSON-RPC)")
             await sse_transport.handle_post_message(scope, receive, send)
 
         # Mount ASGI endpoints using Starlette ASGIRoute (ASGI app signature)
         app.router.routes.append(ASGIRoute("/sse", handle_sse))
         app.router.routes.append(ASGIRoute("/messages", handle_messages, methods=["POST"]))
+        logger.info("SSE endpoints enabled: GET /sse, POST /messages")
+    else:
+        logger.warning("SSE transport not available; only static files will be served if HTTP runs")
 
     return app
 
@@ -150,7 +177,8 @@ def start_http_server_if_needed() -> None:
             return
 
         def run_server() -> None:
-            config = uvicorn.Config(app=app, host=SSE_HOST, port=SSE_PORT, log_level="warning")
+            logger.info("Starting HTTP server on http://%s:%s", SSE_HOST, SSE_PORT)
+            config = uvicorn.Config(app=app, host=SSE_HOST, port=SSE_PORT, log_level="info")
             server = uvicorn.Server(config)
             server.run()
 
@@ -204,6 +232,7 @@ def sanitize_code(code: str) -> Tuple[bool, Optional[str]]:
     lowered = code.lower()
     for token in banned_substrings:
         if token in lowered:
+            logger.warning("Code rejected by sanitizer: token=%s", token)
             return False, f"Detected banned token: {token}"
     return True, None
 
@@ -235,6 +264,10 @@ def run_code_in_docker(workdir: Path, script_name: str = "main.py") -> Tuple[boo
     install_deps = os.environ.get("MCP_DOCKER_INSTALL_DEPS")
     needs_install = bool(install_deps == "true" or image == "python:3.11-slim")
 
+    logger.info(
+        "Running code in Docker image=%s install_deps=%s", image, str(needs_install)
+    )
+
     if needs_install:
         inner_cmd = "pip -q install matplotlib numpy >/dev/null 2>&1 && python -u main.py"
     else:
@@ -255,10 +288,16 @@ def run_code_in_docker(workdir: Path, script_name: str = "main.py") -> Tuple[boo
         proc = subprocess.run(args, capture_output=True, text=True, timeout=180)
         ok = proc.returncode == 0
         logs = proc.stdout + "\n" + proc.stderr
+        if ok:
+            logger.info("Docker execution finished successfully")
+        else:
+            logger.error("Docker execution failed (code=%s)", proc.returncode)
         return ok, logs
     except subprocess.TimeoutExpired:
+        logger.error("Docker execution timed out")
         return False, "Execution timed out in Docker"
     except Exception as e:
+        logger.exception("Docker execution error: %s", e)
         return False, f"Docker execution error: {e}"
 
 
@@ -321,6 +360,7 @@ def call_llm_for_code(problem: str) -> str:
         ],
     )
     content = completion.choices[0].message.content or ""
+    logger.info("LLM call completed: model=%s base_url=%s", model_name, base_url or "default")
     return extract_code_from_markdown(content)
 
 
@@ -333,6 +373,7 @@ def generate_image_from_problem(problem: str) -> Tuple[str, str]:
     start_http_server_if_needed()
 
     # 1) LLM -> code
+    logger.info("Generating code for problem (len=%s)", len(problem))
     code = call_llm_for_code(problem)
 
     ok, reason = sanitize_code(code)
@@ -359,6 +400,7 @@ def generate_image_from_problem(problem: str) -> Tuple[str, str]:
         # 3) Move to public and build URL (support cross-drive move on Windows)
         target_file = IMAGES_DIR / f"{image_id}.png"
         move_file_across_drives(out_file, target_file)
+        logger.info("Image generated: id=%s path=%s", image_id, target_file)
 
     # Prefer HTTP URL if server is running and deps installed; otherwise file URL
     if FastAPI is not None and uvicorn is not None:
@@ -378,10 +420,13 @@ async def render_plot(problem: str) -> dict:
     返回：{"url": 链接, "note": 信息}
     """
     try:
+        logger.info("Tool render_plot invoked")
         loop = asyncio.get_event_loop()
         url, note = await loop.run_in_executor(None, generate_image_from_problem, problem)
+        logger.info("render_plot success: %s", url)
         return {"url": url, "note": note}
     except Exception as e:
+        logger.exception("render_plot error: %s", e)
         return {"error": str(e)}
 
 
@@ -393,6 +438,7 @@ if __name__ == "__main__":
         uvicorn.run(app, host=SSE_HOST, port=SSE_PORT, log_level="info")
     else:
         # Fallback: run stdio (for environments without HTTP stack)
+        logger.info("Starting server in stdio mode")
         mcp.run()
 
 
