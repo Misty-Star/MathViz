@@ -1,153 +1,162 @@
-# MathViz MCP Server
+# MathViz - Visualize Math Problems with AI
 
-一个基于 Model Context Protocol (MCP) 的服务：
-- 接收题干
-- 使用 LLM 生成 matplotlib 绘图代码
-- 在 Docker 沙箱中执行代码并产出图片
-- 通过本地静态服务返回可访问链接
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## 目录结构
+**MathViz** is a service based on the Model Context Protocol (MCP) that transforms mathematical problem descriptions into visualizations. It leverages a Large Language Model (LLM) to generate Matplotlib plotting code, executes it in a secure Docker sandbox, and serves the resulting image via a static web server.
+
+## How It Works
+
+```mermaid
+graph TD
+    subgraph Client
+        A[User/Client] -- "1. Sends problem description" --> B(MathViz MCP Server)
+    end
+
+    subgraph "MathViz MCP Server"
+        B -- "2. Forwards to LLM" --> C{LLM}
+        C -- "3. Generates Matplotlib code" --> B
+        B -- "4. Executes code in sandbox" --> D[Docker Sandbox]
+        D -- "5. Produces plot image" --> E(Static Content Server)
+        E -- "6. Provides image URL" --> B
+    end
+
+    B -- "7. Returns URL to client" --> A
+
+    style B fill:#f9f,stroke:#333,stroke-width:2px
+    style D fill:#bbf,stroke:#333,stroke-width:2px
+    style C fill:#ccf,stroke:#333,stroke-width:2px
+    style E fill:#bfd,stroke:#333,stroke-width:2px
+```
+
+## Core Features
+
+- **AI-Powered Visualization**: Uses an LLM to automatically generate Python Matplotlib code from a problem description.
+- **Secure Execution**: Code is executed in a sandboxed Docker container with network access disabled and resource limits enforced.
+- **Flexible Transport**: Supports both SSE (Server-Sent Events) for web clients and stdio for local applications.
+- **Easy Deployment**: Can be run directly or using a pre-built Docker image for consistency.
+- **Static Serving**: Generated images are exposed through a built-in static server for easy access.
+
+## Project Structure
 
 ```
 MathViz/
-  Dockerfile
-  requirements.txt
-  server/
-    __init__.py
-    main.py
-  public/
-    images/  # 运行时生成
+├── Dockerfile
+├── requirements.txt
+├── server/
+│   ├── __init__.py
+│   └── main.py
+└── public/
+    └── images/      # Generated at runtime
 ```
 
-## 依赖安装
+## Quick Start
+
+### Prerequisites
 
 - Python 3.10+
-- Docker (Windows 下建议 Docker Desktop)
-- 可选：FastAPI/uvicorn（已在 requirements.txt 内）
+- Docker (Docker Desktop is recommended on Windows)
 
-安装 Python 依赖：
+### 1. Installation
+
+Clone the repository and install the required Python dependencies:
 
 ```bash
+git clone <repository-url>
+cd MathViz
 pip install -r requirements.txt
 ```
 
-如遇到 Pydantic 相关错误（如 `Unable to apply constraint 'host_required'`），请确保使用的是一个全新虚拟环境，并按照 `requirements.txt` 固定版本安装，这里已将 `pydantic<2.10` 与 `annotated-types<0.7` 锁定以规避兼容性问题。
+> **Note**: If you encounter Pydantic errors like `Unable to apply constraint 'host_required'`, please ensure you are using a fresh virtual environment. The `requirements.txt` file locks `pydantic<2.10` and `annotated-types<0.7` to avoid compatibility issues.
 
-## 构建 Docker 运行镜像（推荐）
+### 2. Build Docker Image (Recommended)
+
+For a stable and isolated execution environment, build the Docker image:
 
 ```bash
-# 在 MathViz 目录下
 docker build -t mathviz-runner:latest .
 ```
 
-运行时使用该镜像：
+### 3. Configure Environment
 
-- 环境变量：`MCP_DOCKER_IMAGE=mathviz-runner:latest`
-- 关闭运行期安装：`MCP_DOCKER_INSTALL_DEPS=false`
+Create a `.env` file in the project root to store your configuration. You can also specify a different path using the `MCP_ENV_FILE` environment variable.
 
-## 必要环境变量（建议通过 .env 文件提供）
-
-- `OPENAI_API_KEY`: OpenAI/兼容接口的 API Key
-- `OPENAI_BASE_URL`: 可选，自定义 OpenAI 兼容网关地址
-- `OPENAI_MODEL`: 可选，默认 `gpt-4o-mini`
-- `MCP_SSE_HOST`: 可选，SSE 和静态资源服务器 host，默认为 `MCP_ASSETS_HOST` 的值或 `127.0.0.1`
-- `MCP_SSE_PORT`: 可选，SSE 和静态资源服务器端口，默认为 `MCP_ASSETS_PORT` 的值或 `8787`
-- `MCP_DOCKER_IMAGE`: 可选，Docker 镜像名，默认 `python:3.11-slim`
-- `MCP_DOCKER_INSTALL_DEPS`: 可选，`true|false`，默认自动判断
-- `MCP_ENV_FILE`: 可选，指定环境变量文件路径；若未设置则读取项目根目录 `.env`
-- `MCP_LOG_LEVEL`: 可选，控制日志级别，可选值为 `DEBUG`, `INFO`, `WARNING`, `ERROR`，默认 `INFO`
-
-## 环境变量文件示例
-
-在项目根目录创建 `.env`（或自定义路径并通过 `MCP_ENV_FILE` 指定）：
+**`.env` example:**
 
 ```dotenv
-OPENAI_API_KEY=你的Key
-# 如有自建网关：
-# OPENAI_BASE_URL=https://你的OpenAI兼容网关
+# Your OpenAI-compatible API Key
+OPENAI_API_KEY=your_api_key_here
+
+# Optional: Custom base URL for OpenAI-compatible gateway
+# OPENAI_BASE_URL=https://your.gateway.com
+
+# Model to use for code generation
 OPENAI_MODEL=gpt-4o-mini
+
+# Use the pre-built Docker image
 MCP_DOCKER_IMAGE=mathviz-runner:latest
 MCP_DOCKER_INSTALL_DEPS=false
-# 可自定义 SSE 和静态服务监听地址：
+
+# Optional: Customize host and port for SSE and static assets
 # MCP_SSE_HOST=127.0.0.1
 # MCP_SSE_PORT=8787
-# 可调整日志级别
+
+# Optional: Set log level (DEBUG, INFO, WARNING, ERROR)
 # MCP_LOG_LEVEL=DEBUG
 ```
 
-也可以使用其他路径的 env 文件并设置：
+### 4. Run the Server
+
+The server supports two transport protocols:
+
+- **SSE (Server-Sent Events)**: Default and recommended for web-based clients.
+- **stdio (Standard I/O)**: Fallback for local clients if HTTP dependencies are not met.
+
+To start the server in SSE mode:
 
 ```bash
-set MCP_ENV_FILE=E:\\secrets\\mathviz.env
-```
-
-## 运行 MCP 服务
-
-MathViz 服务器支持两种 MCP 传输协议：
-
-- **SSE (Server-Sent Events)**: 推荐用于网络客户端，如网页、VS Code 扩展等。
-- **stdio (Standard I/O)**: 用于本地客户端，如 Claude Desktop App。
-
-服务器会优先尝试以 SSE 模式启动。如果缺少必要的 HTTP 库（如 `fastapi`, `uvicorn`），它会自动降级到 stdio 模式。
-
-### 以 SSE 模式运行
-
-这是默认和推荐的运行方式。服务器会启动一个 HTTP 服务，同时提供 SSE 端点和静态图片托管。
-
-```bash
-# 在 MathViz 目录
 python -m server.main
 ```
 
-- **SSE 端点**:
-  - `GET /sse`: 客户端通过此端点建立 SSE 连接。
-  - `POST /messages`: 客户端向此端点发送 JSON-RPC 消息。
-- **静态图片**:
-  - `GET /images/{image-id}.png`: 访问生成的图片。
-- **监听地址**: 由环境变量 `MCP_SSE_HOST` 和 `MCP_SSE_PORT` 控制，默认为 `127.0.0.1:8787`。
+The server will be available at `http://127.0.0.1:8787` (or as configured).
 
-### 以 stdio 模式运行
+- **SSE Endpoint**: `GET /sse`
+- **Message Endpoint**: `POST /messages`
+- **Image Access**: `GET /images/{image-id}.png`
 
-如果环境中未安装 `fastapi` 和 `uvicorn`，服务器会自动回退到 stdio 模式。你也可以通过卸载这些包来强制使用 stdio。
+## Configuration Details
 
-```bash
-# 确保 fastapi 和 uvicorn 未安装
-pip uninstall fastapi uvicorn
-# 运行服务器
-python -m server.main
-```
+### Environment Variables
 
-## 日志记录
+| Variable                  | Description                                                                                             | Default                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `OPENAI_API_KEY`          | **Required.** API key for the LLM service.                                                              | -                                        |
+| `OPENAI_BASE_URL`         | Custom gateway for the OpenAI-compatible API.                                                           | -                                        |
+| `OPENAI_MODEL`            | The language model to use for code generation.                                                          | `gpt-4o-mini`                            |
+| `MCP_SSE_HOST`            | Host for the SSE and static asset server.                                                               | `127.0.0.1`                              |
+| `MCP_SSE_PORT`            | Port for the SSE and static asset server.                                                               | `8787`                                   |
+| `MCP_DOCKER_IMAGE`        | The Docker image to use for the sandbox.                                                                | `python:3.11-slim`                       |
+| `MCP_DOCKER_INSTALL_DEPS` | If `true`, installs dependencies at runtime. Set to `false` when using a pre-built image.               | Auto-detected                            |
+| `MCP_ENV_FILE`            | Path to the environment variable file.                                                                  | `.env` in the project root               |
+| `MCP_LOG_LEVEL`           | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`).                                                    | `INFO`                                   |
 
-服务器会将运行日志输出到标准错误流（stderr），以便于调试和监控。日志内容包括服务器启动、SSE 连接、工具调用、Docker 执行等关键事件。
+## Tool Definition
 
-可以通过 `MCP_LOG_LEVEL` 环境变量控制日志的详细程度。例如，要查看更详细的 `DEBUG` 级别日志：
+The server exposes one primary tool via MCP:
 
-```bash
-# Windows (CMD)
-set MCP_LOG_LEVEL=DEBUG
-python -m server.main
+- **`render_plot(problem: str)`**:
+  - **Input**: A string containing the mathematical problem description.
+  - **Output**:
+    - Success: `{"url": "<image-url>", "note": "<additional-info>"}`
+    - Failure: `{"error": "<error-message>"}`
 
-# Windows (PowerShell)
-$env:MCP_LOG_LEVEL="DEBUG"
-python -m server.main
+## Security Considerations
 
-# Linux / macOS
-MCP_LOG_LEVEL=DEBUG python -m server.main
-```
+- **Sandboxing**: The execution environment is isolated within a Docker container.
+- **Resource Limiting**: The container is run with restricted CPU, memory, and process counts.
+- **Network Disabled**: Network access from within the container is disabled to prevent external calls.
+- **Code Sanitization**: The LLM-generated code is sanitized to block certain keywords and enforce the use of the `Agg` backend for non-interactive plotting.
 
-## 工具
+## Notes for Windows Users
 
-- `render_plot(problem: str)`
-  - 入参：题干文本
-  - 出参：`{"url": <图片链接>, "note": <信息>}` 或 `{"error": <错误信息>}`
-
-## Windows 注意事项
-
-- Docker 路径挂载在 Linux 容器下会被转换为 `/e/...` 的格式，代码中已处理。
-- 请确保 Docker Desktop 共享了对应的盘符（Settings -> Resources -> File Sharing）。
-
-## 安全说明
-
-- 运行容器时禁用网络、限制 CPU/内存/进程数。
-- 对 LLM 生成代码做了关键字拦截与强制使用 Agg 后端，并默认追加 `savefig` 调用。
+- **Docker Path Mounting**: The code automatically handles path translations for Docker volume mounts on Windows (e.g., `E:\...` becomes `/e/...`).
+- **File Sharing**: Ensure your drive is shared with Docker Desktop (Settings -> Resources -> File Sharing).
