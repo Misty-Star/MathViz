@@ -58,15 +58,17 @@ MathViz/
 
 ### 1. 安装
 
-克隆仓库并安装所需的 Python 依赖项：
+克隆仓库并使用虚拟环境安装所需的 Python 依赖项：
 
 ```bash
 git clone <repository-url>
 cd MathViz
-pip install -r requirements.txt
+uv venv
+source .venv/bin/activate  # Windows 上使用 `.venv\Scripts\activate`
+uv pip install -r requirements.txt
 ```
 
-> **注意**: 如果您遇到 Pydantic 相关的错误（如 `Unable to apply constraint 'host_required'`），请确保您使用的是一个全新的虚拟环境。`requirements.txt` 文件已锁定 `pydantic<2.10` 和 `annotated-types<0.7` 以避免兼容性问题。
+> **注意**: 如果没有安装 uv，请使用 `pip install uv` 安装。
 
 ### 2. 构建 Docker 镜像 (推荐)
 
@@ -114,7 +116,7 @@ MCP_DOCKER_INSTALL_DEPS=false
 以 SSE 模式启动服务器：
 
 ```bash
-python -m server.main
+uv run python -m server.main
 ```
 
 服务器将在 `http://127.0.0.1:8787` (或根据配置的地址) 上可用。

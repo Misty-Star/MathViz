@@ -58,15 +58,17 @@ MathViz/
 
 ### 1. Installation
 
-Clone the repository and install the required Python dependencies:
+Clone the repository and use a virtual environment to install the required Python dependencies:
 
 ```bash
 git clone <repository-url>
 cd MathViz
-pip install -r requirements.txt
+uv venv
+source .venv/bin/activate  # On Windows, use `.venv\Scripts\activate`
+uv pip install -r requirements.txt
 ```
 
-> **Note**: If you encounter Pydantic errors like `Unable to apply constraint 'host_required'`, please ensure you are using a fresh virtual environment. The `requirements.txt` file locks `pydantic<2.10` and `annotated-types<0.7` to avoid compatibility issues.
+> **Note**: If `uv` is not installed, please use `pip install uv` to install it.
 
 ### 2. Build Docker Image (Recommended)
 
@@ -114,7 +116,7 @@ The server supports two transport protocols:
 To start the server in SSE mode:
 
 ```bash
-python -m server.main
+uv run python -m server.main
 ```
 
 The server will be available at `http://127.0.0.1:8787` (or as configured).
