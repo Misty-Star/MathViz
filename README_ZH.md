@@ -104,6 +104,11 @@ MCP_DOCKER_INSTALL_DEPS=false
 
 # 可选：设置日志级别 (DEBUG, INFO, WARNING, ERROR)
 # MCP_LOG_LEVEL=DEBUG
+
+# 可选：配置图片输出与清理
+# MCP_IMAGE_FORMAT=svg
+# MCP_IMAGES_RETENTION_DAYS=3
+# MCP_IMAGES_CLEAN_INTERVAL_SEC=600
 ```
 
 ### 4. 运行服务器
@@ -140,6 +145,9 @@ uv run python -m server.main
 | `MCP_DOCKER_INSTALL_DEPS` | 若为 `true`，则在运行时安装依赖。使用预构建镜像时设为 `false`。            | 自动检测                                 |
 | `MCP_ENV_FILE`            | 环境变量文件的路径。                                                       | 项目根目录下的 `.env`                    |
 | `MCP_LOG_LEVEL`           | 日志级别 (`DEBUG`, `INFO`, `WARNING`, `ERROR`)。                           | `INFO`                                   |
+| `MCP_IMAGE_FORMAT`        | 生成图像的输出格式 (`png`, `svg`, `jpg`, `pdf`)。                          | `png`                                    |
+| `MCP_IMAGES_RETENTION_DAYS` | 删除旧图像前保留的天数。                                                   | `7`                                      |
+| `MCP_IMAGES_CLEAN_INTERVAL_SEC` | 运行旧图像清理任务的间隔秒数。                                             | `3600`                                   |
 
 ## 工具定义
 

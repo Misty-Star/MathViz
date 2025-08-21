@@ -1,3 +1,4 @@
 /public/
 .env
 __pycache__/
+.venv/

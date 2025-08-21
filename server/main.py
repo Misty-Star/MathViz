@@ -10,6 +10,7 @@ import threading
 import subprocess
 import shutil
 import logging
+import time
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -50,6 +51,8 @@ _http_server_started = False
 _http_server_lock = threading.Lock()
 # When running main FastAPI/uvicorn, prevent background HTTP from starting again
 _primary_http_mode = False
+_cleanup_started = False
+_cleanup_lock = threading.Lock()
 
 try:
     from dotenv import load_dotenv  # type: ignore
@@ -101,6 +104,15 @@ STATIC_PORT = int(os.environ.get("MCP_ASSETS_PORT", "8787"))
 # Reuse the same host/port for SSE endpoints
 SSE_HOST = os.environ.get("MCP_SSE_HOST", STATIC_HOST)
 SSE_PORT = int(os.environ.get("MCP_SSE_PORT", str(STATIC_PORT)))
+
+# Image export format and cleanup configuration
+_allowed_formats = {"png", "svg", "jpg", "jpeg", "pdf"}
+IMAGE_FORMAT = os.environ.get("MCP_IMAGE_FORMAT", "png").lower().strip()
+if IMAGE_FORMAT not in _allowed_formats:
+    IMAGE_FORMAT = "png"
+
+IMAGES_RETENTION_DAYS = int(os.environ.get("MCP_IMAGES_RETENTION_DAYS", "7"))
+IMAGES_CLEAN_INTERVAL_SEC = int(os.environ.get("MCP_IMAGES_CLEAN_INTERVAL_SEC", "3600"))
 
 # Configure logging (stderr only, safe for stdio transport)
 logger = logging.getLogger("mathviz")
@@ -178,6 +190,59 @@ def start_http_server_if_needed() -> None:
         thread.start()
         _http_server_started = True
 
+    # Ensure background cleanup is running regardless of HTTP/SSE availability
+    start_cleanup_thread_if_needed()
+
+
+def cleanup_old_images(retention_days: int) -> int:
+    """Delete images in IMAGES_DIR older than retention_days.
+
+    Returns the number of files removed.
+    """
+    ensure_dirs()
+    now_ts = time.time()
+    cutoff = now_ts - max(retention_days, 0) * 24 * 3600
+    removed = 0
+    try:
+        for file in IMAGES_DIR.iterdir():
+            if not file.is_file():
+                continue
+            # Only consider known image extensions
+            suffix = file.suffix.lower().lstrip(".")
+            if suffix not in _allowed_formats:
+                continue
+            try:
+                if file.stat().st_mtime < cutoff:
+                    file.unlink(missing_ok=True)  # type: ignore[arg-type]
+                    removed += 1
+            except Exception:
+                # Ignore individual file errors
+                continue
+    except Exception as e:
+        logger.warning("Image cleanup scan failed: %s", e)
+    if removed:
+        logger.info("Image cleanup removed %s old files", removed)
+    return removed
+
+
+def _cleanup_worker() -> None:
+    while True:
+        try:
+            cleanup_old_images(IMAGES_RETENTION_DAYS)
+        except Exception as e:
+            logger.warning("Cleanup worker error: %s", e)
+        time.sleep(max(IMAGES_CLEAN_INTERVAL_SEC, 60))
+
+
+def start_cleanup_thread_if_needed() -> None:
+    global _cleanup_started
+    with _cleanup_lock:
+        if _cleanup_started:
+            return
+        thread = threading.Thread(target=_cleanup_worker, name="images-cleanup", daemon=True)
+        thread.start()
+        _cleanup_started = True
+
 
 def to_docker_mount_path(local_path: Path) -> str:
     """Return a path suitable for Docker -v source on current OS.
@@ -243,7 +308,7 @@ def wrap_code_for_matplotlib(code: str, output_filename: str) -> str:
     footer_lines = []
     # Ensure the script saves a figure; if not, we append a default save
     if re.search(r"savefig\s*\(", code) is None:
-        footer_lines.append("plt.savefig(OUTPUT_PATH, dpi=200, bbox_inches='tight')")
+        footer_lines.append("plt.savefig(OUTPUT_PATH, dpi=200, bbox_inches='tight', transparent=True)")
     footer_lines.append("plt.close('all')")
     footer = "\n".join(footer_lines) + "\n"
 
@@ -374,7 +439,8 @@ def generate_image_from_problem(problem: str) -> Tuple[str, str]:
 
     # 2) Wrap + run in Docker
     image_id = str(uuid.uuid4()).replace("-", "")
-    output_filename = "out.png"
+    ext = "jpeg" if IMAGE_FORMAT == "jpg" else IMAGE_FORMAT
+    output_filename = f"out.{ext}"
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
@@ -390,13 +456,13 @@ def generate_image_from_problem(problem: str) -> Tuple[str, str]:
             raise RuntimeError(f"未找到输出图片：{output_filename}\n日志：\n{logs}")
 
         # 3) Move to public and build URL (support cross-drive move on Windows)
-        target_file = IMAGES_DIR / f"{image_id}.png"
+        target_file = IMAGES_DIR / f"{image_id}.{ext}"
         move_file_across_drives(out_file, target_file)
         logger.info("Image generated: id=%s path=%s", image_id, target_file)
 
     # Prefer HTTP URL if server is running and deps installed; otherwise file URL
     if FastAPI is not None and uvicorn is not None:
-        url = f"http://{SSE_HOST}:{SSE_PORT}/images/{image_id}.png"
+        url = f"http://{SSE_HOST}:{SSE_PORT}/images/{image_id}.{ext}"
     else:
         url = Path(target_file).resolve().as_uri()
 
@@ -413,6 +479,9 @@ async def render_plot(problem: str) -> dict:
     """
     try:
         logger.info("Tool render_plot invoked")
+        # Make sure background services (HTTP and cleanup) are running
+        start_http_server_if_needed()
+        start_cleanup_thread_if_needed()
         loop = asyncio.get_event_loop()
         url, note = await loop.run_in_executor(None, generate_image_from_problem, problem)
         logger.info("render_plot success: %s", url)
@@ -428,10 +497,13 @@ if __name__ == "__main__":
         app = create_http_app()
         assert app is not None
         _primary_http_mode = True
+        # Start background cleanup in primary HTTP mode as well
+        start_cleanup_thread_if_needed()
         uvicorn.run(app, host=SSE_HOST, port=SSE_PORT, log_level="info")
     else:
         # Fallback: run stdio (for environments without HTTP stack)
         logger.info("Starting server in stdio mode")
+        start_cleanup_thread_if_needed()
         mcp.run()
 
 

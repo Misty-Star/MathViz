@@ -104,6 +104,11 @@ MCP_DOCKER_INSTALL_DEPS=false
 
 # Optional: Set log level (DEBUG, INFO, WARNING, ERROR)
 # MCP_LOG_LEVEL=DEBUG
+
+# Optional: Configure image output and cleanup
+# MCP_IMAGE_FORMAT=svg
+# MCP_IMAGES_RETENTION_DAYS=3
+# MCP_IMAGES_CLEAN_INTERVAL_SEC=600
 ```
 
 ### 4. Run the Server
@@ -140,6 +145,9 @@ The server will be available at `http://127.0.0.1:8787` (or as configured).
 | `MCP_DOCKER_INSTALL_DEPS` | If `true`, installs dependencies at runtime. Set to `false` when using a pre-built image.               | Auto-detected                            |
 | `MCP_ENV_FILE`            | Path to the environment variable file.                                                                  | `.env` in the project root               |
 | `MCP_LOG_LEVEL`           | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`).                                                    | `INFO`                                   |
+| `MCP_IMAGE_FORMAT`        | Output format for generated images (`png`, `svg`, `jpg`, `pdf`).                                        | `png`                                    |
+| `MCP_IMAGES_RETENTION_DAYS` | How many days to keep generated images before deleting them.                                            | `7`                                      |
+| `MCP_IMAGES_CLEAN_INTERVAL_SEC` | Interval in seconds for running the old image cleanup task.                                             | `3600`                                   |
 
 ## Tool Definition
 
