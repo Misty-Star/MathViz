@@ -105,6 +105,13 @@ STATIC_PORT = int(os.environ.get("MCP_ASSETS_PORT", "8787"))
 SSE_HOST = os.environ.get("MCP_SSE_HOST", STATIC_HOST)
 SSE_PORT = int(os.environ.get("MCP_SSE_PORT", str(STATIC_PORT)))
 
+# Public URL configuration for external access
+# This allows binding to 0.0.0.0 while returning proper public URLs
+PUBLIC_HOST = os.environ.get("MCP_PUBLIC_HOST")  # Optional: override for public URLs
+PUBLIC_PORT = os.environ.get("MCP_PUBLIC_PORT")  # Optional: override for public port
+# Alternative: full public URL base (e.g., "https://your-domain.com" or "http://1.2.3.4:8787")
+PUBLIC_BASE_URL = os.environ.get("MCP_PUBLIC_BASE_URL")
+
 # Image export format and cleanup configuration
 _allowed_formats = {"png", "svg", "jpg", "jpeg", "pdf"}
 IMAGE_FORMAT = os.environ.get("MCP_IMAGE_FORMAT", "png").lower().strip()
@@ -530,9 +537,20 @@ def generate_image_from_problem(problem: str) -> Tuple[str, str]:
             move_file_across_drives(out_file, target_file)
             logger.info("Image generated: id=%s path=%s", image_id, target_file)
 
-    # Prefer HTTP URL if server is running and deps installed; otherwise file URL
+    # Generate URL for accessing the image
     if FastAPI is not None and uvicorn is not None:
-        url = f"http://{SSE_HOST}:{SSE_PORT}/images/{image_id}.{ext}"
+        # Determine the public URL to return
+        if PUBLIC_BASE_URL:
+            # Use full base URL if provided (e.g., "https://domain.com" or "http://1.2.3.4:8787")
+            base_url = PUBLIC_BASE_URL.rstrip('/')
+            url = f"{base_url}/images/{image_id}.{ext}"
+        elif PUBLIC_HOST:
+            # Use separate public host/port if provided
+            public_port = int(PUBLIC_PORT) if PUBLIC_PORT else SSE_PORT
+            url = f"http://{PUBLIC_HOST}:{public_port}/images/{image_id}.{ext}"
+        else:
+            # Default: use the same host/port as server binding
+            url = f"http://{SSE_HOST}:{SSE_PORT}/images/{image_id}.{ext}"
     else:
         url = Path(target_file).resolve().as_uri()
 

@@ -98,9 +98,19 @@ OPENAI_MODEL=gpt-4o-mini
 MCP_DOCKER_IMAGE=mathviz-runner:latest
 MCP_DOCKER_INSTALL_DEPS=false
 
-# Optional: Customize host and port for SSE and static assets
+# Server binding and public URL configuration
+# For local development:
 # MCP_SSE_HOST=127.0.0.1
 # MCP_SSE_PORT=8787
+
+# For server deployment with public access:
+# MCP_SSE_HOST=0.0.0.0  # Bind to all interfaces
+# MCP_SSE_PORT=8787
+# MCP_PUBLIC_BASE_URL=http://YOUR_PUBLIC_IP:8787  # Public URL for image access
+# 
+# Alternative: specify public host/port separately
+# MCP_PUBLIC_HOST=YOUR_PUBLIC_IP
+# MCP_PUBLIC_PORT=8787
 
 # Optional: Set log level (DEBUG, INFO, WARNING, ERROR)
 # MCP_LOG_LEVEL=DEBUG
@@ -130,6 +140,37 @@ The server will be available at `http://127.0.0.1:8787` (or as configured).
 - **Message Endpoint**: `POST /messages`
 - **Image Access**: `GET /images/{image-id}.png`
 
+## Server Deployment
+
+### Public Server Setup
+
+For deploying on a server with public access:
+
+1. **Configure for public access**:
+   ```bash
+   # .env
+   MCP_SSE_HOST=0.0.0.0  # Bind to all network interfaces
+   MCP_SSE_PORT=8787
+   MCP_PUBLIC_BASE_URL=http://YOUR_PUBLIC_IP:8787
+   ```
+
+2. **Alternative configuration**:
+   ```bash
+   # .env
+   MCP_SSE_HOST=0.0.0.0
+   MCP_PUBLIC_HOST=YOUR_PUBLIC_IP
+   MCP_PUBLIC_PORT=8787
+   ```
+
+3. **With domain and HTTPS**:
+   ```bash
+   # .env
+   MCP_SSE_HOST=0.0.0.0
+   MCP_PUBLIC_BASE_URL=https://yourdomain.com
+   ```
+
+**Note**: The server binds to `0.0.0.0` for public access but returns URLs with the correct public IP/domain configured via `MCP_PUBLIC_BASE_URL` or `MCP_PUBLIC_HOST`.
+
 ## Configuration Details
 
 ### Environment Variables
@@ -141,6 +182,9 @@ The server will be available at `http://127.0.0.1:8787` (or as configured).
 | `OPENAI_MODEL`            | The language model to use for code generation.                                                          | `gpt-4o-mini`                            |
 | `MCP_SSE_HOST`            | Host for the SSE and static asset server.                                                               | `127.0.0.1`                              |
 | `MCP_SSE_PORT`            | Port for the SSE and static asset server.                                                               | `8787`                                   |
+| `MCP_PUBLIC_HOST`         | Public host/IP for generating accessible URLs (when different from binding host).                      | Same as `MCP_SSE_HOST`                   |
+| `MCP_PUBLIC_PORT`         | Public port for generating accessible URLs (when different from binding port).                         | Same as `MCP_SSE_PORT`                   |
+| `MCP_PUBLIC_BASE_URL`     | Complete public base URL (e.g., `https://yourdomain.com` or `http://1.2.3.4:8787`). Overrides host/port settings. | -                                        |
 | `MCP_DOCKER_IMAGE`        | The Docker image to use for the sandbox.                                                                | `python:3.11-slim`                       |
 | `MCP_DOCKER_INSTALL_DEPS` | If `true`, installs dependencies at runtime. Set to `false` when using a pre-built image.               | Auto-detected                            |
 | `MCP_ENV_FILE`            | Path to the environment variable file.                                                                  | `.env` in the project root               |

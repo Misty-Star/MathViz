@@ -98,9 +98,19 @@ OPENAI_MODEL=gpt-4o-mini
 MCP_DOCKER_IMAGE=mathviz-runner:latest
 MCP_DOCKER_INSTALL_DEPS=false
 
-# 可选：为 SSE 和静态资源自定义主机和端口
+# 服务器绑定和公网 URL 配置
+# 用于本地开发：
 # MCP_SSE_HOST=127.0.0.1
 # MCP_SSE_PORT=8787
+
+# 用于具有公网访问的服务器部署：
+# MCP_SSE_HOST=0.0.0.0  # 绑定到所有网络接口
+# MCP_SSE_PORT=8787
+# MCP_PUBLIC_BASE_URL=http://YOUR_PUBLIC_IP:8787  # 图像访问的公网 URL
+# 
+# 备选方案：分别指定公网主机和端口
+# MCP_PUBLIC_HOST=YOUR_PUBLIC_IP
+# MCP_PUBLIC_PORT=8787
 
 # 可选：设置日志级别 (DEBUG, INFO, WARNING, ERROR)
 # MCP_LOG_LEVEL=DEBUG
@@ -130,6 +140,37 @@ uv run python -m server.main
 - **消息端点**: `POST /messages`
 - **图像访问**: `GET /images/{image-id}.png`
 
+## 服务器部署
+
+### 公网服务器设置
+
+在具有公网访问的服务器上部署：
+
+1. **配置公网访问**：
+   ```bash
+   # .env
+   MCP_SSE_HOST=0.0.0.0  # 绑定到所有网络接口
+   MCP_SSE_PORT=8787
+   MCP_PUBLIC_BASE_URL=http://YOUR_PUBLIC_IP:8787
+   ```
+
+2. **备选配置**：
+   ```bash
+   # .env
+   MCP_SSE_HOST=0.0.0.0
+   MCP_PUBLIC_HOST=YOUR_PUBLIC_IP
+   MCP_PUBLIC_PORT=8787
+   ```
+
+3. **使用域名和 HTTPS**：
+   ```bash
+   # .env
+   MCP_SSE_HOST=0.0.0.0
+   MCP_PUBLIC_BASE_URL=https://yourdomain.com
+   ```
+
+**注意**: 服务器绑定到 `0.0.0.0` 以便公网访问，但返回的 URL 使用通过 `MCP_PUBLIC_BASE_URL` 或 `MCP_PUBLIC_HOST` 配置的正确公网 IP/域名。
+
 ## 配置详情
 
 ### 环境变量
@@ -141,6 +182,9 @@ uv run python -m server.main
 | `OPENAI_MODEL`            | 用于代码生成的语言模型。                                                   | `gpt-4o-mini`                            |
 | `MCP_SSE_HOST`            | SSE 和静态资源服务器的主机。                                               | `127.0.0.1`                              |
 | `MCP_SSE_PORT`            | SSE 和静态资源服务器的端口。                                               | `8787`                                   |
+| `MCP_PUBLIC_HOST`         | 用于生成可访问 URL 的公网主机/IP（当与绑定主机不同时）。                   | 与 `MCP_SSE_HOST` 相同                   |
+| `MCP_PUBLIC_PORT`         | 用于生成可访问 URL 的公网端口（当与绑定端口不同时）。                      | 与 `MCP_SSE_PORT` 相同                   |
+| `MCP_PUBLIC_BASE_URL`     | 完整的公网基础 URL（如 `https://yourdomain.com` 或 `http://1.2.3.4:8787`）。覆盖主机/端口设置。 | -                                        |
 | `MCP_DOCKER_IMAGE`        | 用于沙箱的 Docker 镜像。                                                   | `python:3.11-slim`                       |
 | `MCP_DOCKER_INSTALL_DEPS` | 若为 `true`，则在运行时安装依赖。使用预构建镜像时设为 `false`。            | 自动检测                                 |
 | `MCP_ENV_FILE`            | 环境变量文件的路径。                                                       | 项目根目录下的 `.env`                    |
