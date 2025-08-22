@@ -315,28 +315,30 @@ def wrap_code_for_matplotlib(code: str, output_filename: str) -> str:
         "import numpy as np\n"
         "import math\n"
         "\n"
-        f"OUTPUT_PATH = r'{output_filename}'\n"
+        f"OUTPUT_PATH_ORIG = r'{output_filename}'\n"
+        "# Keep OUTPUT_PATH for compatibility with generated code, but don't rely on it\n"
+        "OUTPUT_PATH = OUTPUT_PATH_ORIG\n"
         "\n"
         "# Add debug prints to help diagnose issues\n"
-        "print(f'Starting execution, output path: {OUTPUT_PATH}', file=sys.stderr)\n"
+        "print(f'Starting execution, output path: {OUTPUT_PATH_ORIG}', file=sys.stderr)\n"
         "\n"
-        "# Force all save operations to write to OUTPUT_PATH, preserving common kwargs\n"
+        "# Force all save operations to write to the original output path, preserving common kwargs\n"
         "_ORIG_PLT_SAVEFIG = plt.savefig\n"
-        "def _FORCED_SAVEFIG(*args, **kwargs):\n"
+        "def _FORCED_SAVEFIG(*args, _op=OUTPUT_PATH_ORIG, **kwargs):\n"
         "    kwargs.setdefault('dpi', 200)\n"
         "    kwargs.setdefault('bbox_inches', 'tight')\n"
         "    kwargs.setdefault('transparent', True)\n"
-        "    print(f'Saving plot to: {OUTPUT_PATH}', file=sys.stderr)\n"
-        "    return _ORIG_PLT_SAVEFIG(OUTPUT_PATH, **kwargs)\n"
+        "    print(f'Saving plot to: {_op}', file=sys.stderr)\n"
+        "    return _ORIG_PLT_SAVEFIG(_op, **kwargs)\n"
         "plt.savefig = _FORCED_SAVEFIG\n"
         "\n"
         "_ORIG_FIG_SAVEFIG = Figure.savefig\n"
-        "def _FORCED_FIG_SAVEFIG(self, *args, **kwargs):\n"
+        "def _FORCED_FIG_SAVEFIG(self, *args, _op=OUTPUT_PATH_ORIG, **kwargs):\n"
         "    kwargs.setdefault('dpi', 200)\n"
         "    kwargs.setdefault('bbox_inches', 'tight')\n"
         "    kwargs.setdefault('transparent', True)\n"
-        "    print(f'Saving figure to: {OUTPUT_PATH}', file=sys.stderr)\n"
-        "    return _ORIG_FIG_SAVEFIG(self, OUTPUT_PATH, **kwargs)\n"
+        "    print(f'Saving figure to: {_op}', file=sys.stderr)\n"
+        "    return _ORIG_FIG_SAVEFIG(self, _op, **kwargs)\n"
         "Figure.savefig = _FORCED_FIG_SAVEFIG\n"
         "\n"
         "# Wrap execution in try-catch for better error reporting\n"
@@ -347,7 +349,7 @@ def wrap_code_for_matplotlib(code: str, output_filename: str) -> str:
     # Ensure the script saves a figure; if not, we append a default save
     if re.search(r"savefig\s*\(", code) is None:
         footer_lines.append("    print('No savefig found in code, adding default save', file=sys.stderr)")
-        footer_lines.append("    plt.savefig(OUTPUT_PATH, dpi=200, bbox_inches='tight', transparent=True)")
+        footer_lines.append("    plt.savefig(OUTPUT_PATH_ORIG, dpi=200, bbox_inches='tight', transparent=True)")
     footer_lines.append("")
     footer_lines.append("except Exception as e:")
     footer_lines.append("    print(f'ERROR during execution: {e}', file=sys.stderr)")
@@ -356,10 +358,11 @@ def wrap_code_for_matplotlib(code: str, output_filename: str) -> str:
     footer_lines.append("    sys.exit(1)")
     footer_lines.append("")
     footer_lines.append("import os")
-    footer_lines.append("if os.path.exists(OUTPUT_PATH):")
-    footer_lines.append("    print(f'File saved successfully: {OUTPUT_PATH} (size: {os.path.getsize(OUTPUT_PATH)} bytes)', file=sys.stderr)")
+    footer_lines.append("FINAL_OUTPUT = OUTPUT_PATH_ORIG")
+    footer_lines.append("if os.path.exists(FINAL_OUTPUT):")
+    footer_lines.append("    print(f'File saved successfully: {FINAL_OUTPUT} (size: {os.path.getsize(FINAL_OUTPUT)} bytes)', file=sys.stderr)")
     footer_lines.append("else:")
-    footer_lines.append("    print(f'ERROR: File not created: {OUTPUT_PATH}', file=sys.stderr)")
+    footer_lines.append("    print(f'ERROR: File not created: {FINAL_OUTPUT}', file=sys.stderr)")
     footer_lines.append("    sys.exit(1)")
     footer_lines.append("plt.close('all')")
     footer = "\n".join(footer_lines) + "\n"
