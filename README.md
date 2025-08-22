@@ -148,6 +148,7 @@ The server will be available at `http://127.0.0.1:8787` (or as configured).
 | `MCP_IMAGE_FORMAT`        | Output format for generated images (`png`, `svg`, `jpg`, `pdf`).                                        | `png`                                    |
 | `MCP_IMAGES_RETENTION_DAYS` | How many days to keep generated images before deleting them.                                            | `7`                                      |
 | `MCP_IMAGES_CLEAN_INTERVAL_SEC` | Interval in seconds for running the old image cleanup task.                                             | `3600`                                   |
+| `MCP_DIRECT_SAVE_IMAGES`  | If `true`, saves images directly to the public directory to avoid a move operation.                   | `false`                                  |
 
 ## Tool Definition
 

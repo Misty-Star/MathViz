@@ -114,6 +114,10 @@ if IMAGE_FORMAT not in _allowed_formats:
 IMAGES_RETENTION_DAYS = int(os.environ.get("MCP_IMAGES_RETENTION_DAYS", "7"))
 IMAGES_CLEAN_INTERVAL_SEC = int(os.environ.get("MCP_IMAGES_CLEAN_INTERVAL_SEC", "3600"))
 
+# Optional: write images directly into public/images from inside Docker
+DIRECT_SAVE_IMAGES = os.environ.get("MCP_DIRECT_SAVE_IMAGES", "false").strip().lower() == "true"
+DOCKER_IMAGES_MOUNT = "/images"
+
 # Configure logging (stderr only, safe for stdio transport)
 logger = logging.getLogger("mathviz")
 if not logger.handlers:
@@ -296,23 +300,64 @@ def sanitize_code(code: str) -> Tuple[bool, Optional[str]]:
 
 def wrap_code_for_matplotlib(code: str, output_filename: str) -> str:
     header = (
+        "import sys\n"
         "import matplotlib\n"
         "matplotlib.use('Agg')\n"
         "import matplotlib.pyplot as plt\n"
+        "from matplotlib.figure import Figure\n"
         "import numpy as np\n"
         "import math\n"
         "\n"
         f"OUTPUT_PATH = r'{output_filename}'\n"
+        "\n"
+        "# Add debug prints to help diagnose issues\n"
+        "print(f'Starting execution, output path: {OUTPUT_PATH}', file=sys.stderr)\n"
+        "\n"
+        "# Force all save operations to write to OUTPUT_PATH, preserving common kwargs\n"
+        "_ORIG_PLT_SAVEFIG = plt.savefig\n"
+        "def _FORCED_SAVEFIG(*args, **kwargs):\n"
+        "    kwargs.setdefault('dpi', 200)\n"
+        "    kwargs.setdefault('bbox_inches', 'tight')\n"
+        "    kwargs.setdefault('transparent', True)\n"
+        "    print(f'Saving plot to: {OUTPUT_PATH}', file=sys.stderr)\n"
+        "    return _ORIG_PLT_SAVEFIG(OUTPUT_PATH, **kwargs)\n"
+        "plt.savefig = _FORCED_SAVEFIG\n"
+        "\n"
+        "_ORIG_FIG_SAVEFIG = Figure.savefig\n"
+        "def _FORCED_FIG_SAVEFIG(self, *args, **kwargs):\n"
+        "    kwargs.setdefault('dpi', 200)\n"
+        "    kwargs.setdefault('bbox_inches', 'tight')\n"
+        "    kwargs.setdefault('transparent', True)\n"
+        "    print(f'Saving figure to: {OUTPUT_PATH}', file=sys.stderr)\n"
+        "    return _ORIG_FIG_SAVEFIG(self, OUTPUT_PATH, **kwargs)\n"
+        "Figure.savefig = _FORCED_FIG_SAVEFIG\n"
+        "\n"
+        "# Wrap execution in try-catch for better error reporting\n"
+        "try:\n"
     )
 
     footer_lines = []
     # Ensure the script saves a figure; if not, we append a default save
     if re.search(r"savefig\s*\(", code) is None:
-        footer_lines.append("plt.savefig(OUTPUT_PATH, dpi=200, bbox_inches='tight', transparent=True)")
+        footer_lines.append("    print('No savefig found in code, adding default save', file=sys.stderr)")
+        footer_lines.append("    plt.savefig(OUTPUT_PATH, dpi=200, bbox_inches='tight', transparent=True)")
+    footer_lines.append("")
+    footer_lines.append("except Exception as e:")
+    footer_lines.append("    print(f'ERROR during execution: {e}', file=sys.stderr)")
+    footer_lines.append("    import traceback")
+    footer_lines.append("    traceback.print_exc(file=sys.stderr)")
+    footer_lines.append("    sys.exit(1)")
+    footer_lines.append("")
+    footer_lines.append("import os")
+    footer_lines.append("if os.path.exists(OUTPUT_PATH):")
+    footer_lines.append("    print(f'File saved successfully: {OUTPUT_PATH} (size: {os.path.getsize(OUTPUT_PATH)} bytes)', file=sys.stderr)")
+    footer_lines.append("else:")
+    footer_lines.append("    print(f'ERROR: File not created: {OUTPUT_PATH}', file=sys.stderr)")
+    footer_lines.append("    sys.exit(1)")
     footer_lines.append("plt.close('all')")
     footer = "\n".join(footer_lines) + "\n"
 
-    return f"{header}\n{code}\n\n{footer}"
+    return f"{header}\n\n{chr(10).join('    ' + line for line in code.split(chr(10)))}\n\n{footer}"
 
 
 def run_code_in_docker(workdir: Path, script_name: str = "main.py") -> Tuple[bool, str]:
@@ -338,9 +383,17 @@ def run_code_in_docker(workdir: Path, script_name: str = "main.py") -> Tuple[boo
         "--pids-limit", "128",
         "--cpus", "1",
         "-m", "512m",
+    ]
+
+    # Optionally mount images directory for direct save
+    if DIRECT_SAVE_IMAGES:
+        images_mount = to_docker_mount_path(IMAGES_DIR)
+        args.extend(["-v", f"{images_mount}:{DOCKER_IMAGES_MOUNT}"])
+
+    args.extend([
         image,
         "bash", "-lc", inner_cmd,
-    ]
+    ])
     try:
         proc = subprocess.run(args, capture_output=True, text=True, timeout=180)
         ok = proc.returncode == 0
@@ -440,25 +493,42 @@ def generate_image_from_problem(problem: str) -> Tuple[str, str]:
     # 2) Wrap + run in Docker
     image_id = str(uuid.uuid4()).replace("-", "")
     ext = "jpeg" if IMAGE_FORMAT == "jpg" else IMAGE_FORMAT
-    output_filename = f"out.{ext}"
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         script_path = tmp_path / "main.py"
-        wrapped = wrap_code_for_matplotlib(code, output_filename)
+        # Decide where the script should save: temp file or mounted images dir
+        if DIRECT_SAVE_IMAGES:
+            # Container path where images dir is mounted
+            output_path_in_container = f"{DOCKER_IMAGES_MOUNT}/{image_id}.{ext}"
+            target_file = IMAGES_DIR / f"{image_id}.{ext}"
+        else:
+            output_path_in_container = f"out.{ext}"
+            target_file = IMAGES_DIR / f"{image_id}.{ext}"
+
+        wrapped = wrap_code_for_matplotlib(code, output_path_in_container)
         script_path.write_text(wrapped, encoding="utf-8")
 
         ok, logs = run_code_in_docker(tmp_path)
-        out_file = tmp_path / output_filename
         if not ok:
             raise RuntimeError(f"Docker 运行失败：\n{logs}")
-        if not out_file.exists():
-            raise RuntimeError(f"未找到输出图片：{output_filename}\n日志：\n{logs}")
-
-        # 3) Move to public and build URL (support cross-drive move on Windows)
-        target_file = IMAGES_DIR / f"{image_id}.{ext}"
-        move_file_across_drives(out_file, target_file)
-        logger.info("Image generated: id=%s path=%s", image_id, target_file)
+        
+        if DIRECT_SAVE_IMAGES:
+            # Image should already be written to target_file via Docker mount
+            if not target_file.exists():
+                raise RuntimeError(
+                    f"未在公共目录找到输出图片：{target_file.name}\n日志：\n{logs}"
+                )
+            logger.info("Image generated directly: id=%s path=%s", image_id, target_file)
+        else:
+            # Image saved inside temp workdir; move into public/images
+            out_file = tmp_path / output_path_in_container
+            if not out_file.exists():
+                raise RuntimeError(
+                    f"未找到输出图片：{output_path_in_container}\n日志：\n{logs}"
+                )
+            move_file_across_drives(out_file, target_file)
+            logger.info("Image generated: id=%s path=%s", image_id, target_file)
 
     # Prefer HTTP URL if server is running and deps installed; otherwise file URL
     if FastAPI is not None and uvicorn is not None:

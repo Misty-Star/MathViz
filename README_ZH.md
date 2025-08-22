@@ -148,6 +148,7 @@ uv run python -m server.main
 | `MCP_IMAGE_FORMAT`        | 生成图像的输出格式 (`png`, `svg`, `jpg`, `pdf`)。                          | `png`                                    |
 | `MCP_IMAGES_RETENTION_DAYS` | 删除旧图像前保留的天数。                                                   | `7`                                      |
 | `MCP_IMAGES_CLEAN_INTERVAL_SEC` | 运行旧图像清理任务的间隔秒数。                                             | `3600`                                   |
+| `MCP_DIRECT_SAVE_IMAGES`  | 若为 `true`，则直接将图像保存到公共目录，以避免移动操作。                   | `false`                                  |
 
 ## 工具定义
 
