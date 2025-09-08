@@ -112,6 +112,11 @@ MCP_DOCKER_INSTALL_DEPS=false
 # MCP_PUBLIC_HOST=YOUR_PUBLIC_IP
 # MCP_PUBLIC_PORT=8787
 
+# HTTPS/SSL 配置（可选）
+# MCP_SSL_CERT_FILE=/path/to/certificate.crt
+# MCP_SSL_KEY_FILE=/path/to/private.key
+# MCP_PUBLIC_BASE_URL=https://yourdomain.com:8787
+
 # 可选：设置日志级别 (DEBUG, INFO, WARNING, ERROR)
 # MCP_LOG_LEVEL=DEBUG
 
@@ -166,7 +171,9 @@ uv run python -m server.main
    ```bash
    # .env
    MCP_SSE_HOST=0.0.0.0
-   MCP_PUBLIC_BASE_URL=https://yourdomain.com
+   MCP_SSL_CERT_FILE=/path/to/your/certificate.crt
+   MCP_SSL_KEY_FILE=/path/to/your/private.key
+   MCP_PUBLIC_BASE_URL=https://yourdomain.com:8787
    ```
 
 **注意**: 服务器绑定到 `0.0.0.0` 以便公网访问，但返回的 URL 使用通过 `MCP_PUBLIC_BASE_URL` 或 `MCP_PUBLIC_HOST` 配置的正确公网 IP/域名。
@@ -185,6 +192,8 @@ uv run python -m server.main
 | `MCP_PUBLIC_HOST`         | 用于生成可访问 URL 的公网主机/IP（当与绑定主机不同时）。                   | 与 `MCP_SSE_HOST` 相同                   |
 | `MCP_PUBLIC_PORT`         | 用于生成可访问 URL 的公网端口（当与绑定端口不同时）。                      | 与 `MCP_SSE_PORT` 相同                   |
 | `MCP_PUBLIC_BASE_URL`     | 完整的公网基础 URL（如 `https://yourdomain.com` 或 `http://1.2.3.4:8787`）。覆盖主机/端口设置。 | -                                        |
+| `MCP_SSL_CERT_FILE`       | SSL 证书文件路径（启用 HTTPS）。                                          | -                                        |
+| `MCP_SSL_KEY_FILE`        | SSL 私钥文件路径（启用 HTTPS）。                                          | -                                        |
 | `MCP_DOCKER_IMAGE`        | 用于沙箱的 Docker 镜像。                                                   | `python:3.11-slim`                       |
 | `MCP_DOCKER_INSTALL_DEPS` | 若为 `true`，则在运行时安装依赖。使用预构建镜像时设为 `false`。            | 自动检测                                 |
 | `MCP_ENV_FILE`            | 环境变量文件的路径。                                                       | 项目根目录下的 `.env`                    |

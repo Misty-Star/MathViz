@@ -112,6 +112,11 @@ PUBLIC_PORT = os.environ.get("MCP_PUBLIC_PORT")  # Optional: override for public
 # Alternative: full public URL base (e.g., "https://your-domain.com" or "http://1.2.3.4:8787")
 PUBLIC_BASE_URL = os.environ.get("MCP_PUBLIC_BASE_URL")
 
+# SSL/TLS configuration
+SSL_CERT_FILE = os.environ.get("MCP_SSL_CERT_FILE")  # Path to SSL certificate file
+SSL_KEY_FILE = os.environ.get("MCP_SSL_KEY_FILE")    # Path to SSL private key file
+SSL_ENABLED = bool(SSL_CERT_FILE and SSL_KEY_FILE)   # Enable SSL if both cert and key are provided
+
 # Image export format and cleanup configuration
 _allowed_formats = {"png", "svg", "jpg", "jpeg", "pdf"}
 IMAGE_FORMAT = os.environ.get("MCP_IMAGE_FORMAT", "png").lower().strip()
@@ -160,6 +165,19 @@ def create_http_app() -> Optional[object]:
     app.mount("/images", StaticFiles(directory=str(IMAGES_DIR), html=False), name="images")
     logger.info("Mounted static images at /images -> %s", IMAGES_DIR)
 
+    # Add health check endpoint
+    @app.get("/health")
+    async def health_check():
+        return {
+            "status": "healthy",
+            "server": SERVER_NAME,
+            "host": SSE_HOST,
+            "port": SSE_PORT,
+            "ssl_enabled": SSL_ENABLED,
+            "public_base_url": PUBLIC_BASE_URL,
+            "images_dir": str(IMAGES_DIR)
+        }
+
     # Mount FastMCP's official SSE Starlette app to avoid transport mismatches
     try:
         starlette_sse_app = mcp.sse_app()
@@ -192,8 +210,23 @@ def start_http_server_if_needed() -> None:
             return
 
         def run_server() -> None:
-            logger.info("Starting HTTP server on http://%s:%s", SSE_HOST, SSE_PORT)
-            config = uvicorn.Config(app=app, host=SSE_HOST, port=SSE_PORT, log_level="info")
+            protocol = "https" if SSL_ENABLED else "http"
+            logger.info("Starting %s server on %s://%s:%s", protocol.upper(), protocol, SSE_HOST, SSE_PORT)
+            
+            config_kwargs = {
+                "app": app,
+                "host": SSE_HOST,
+                "port": SSE_PORT,
+                "log_level": "info"
+            }
+            
+            # Add SSL configuration if enabled
+            if SSL_ENABLED:
+                config_kwargs["ssl_certfile"] = SSL_CERT_FILE
+                config_kwargs["ssl_keyfile"] = SSL_KEY_FILE
+                logger.info("SSL enabled with cert: %s, key: %s", SSL_CERT_FILE, SSL_KEY_FILE)
+            
+            config = uvicorn.Config(**config_kwargs)
             server = uvicorn.Server(config)
             server.run()
 
@@ -550,10 +583,12 @@ def generate_image_from_problem(problem: str) -> Tuple[str, str]:
         elif PUBLIC_HOST:
             # Use separate public host/port if provided
             public_port = int(PUBLIC_PORT) if PUBLIC_PORT else SSE_PORT
-            url = f"http://{PUBLIC_HOST}:{public_port}/images/{image_id}.{ext}"
+            protocol = "https" if SSL_ENABLED else "http"
+            url = f"{protocol}://{PUBLIC_HOST}:{public_port}/images/{image_id}.{ext}"
         else:
             # Default: use the same host/port as server binding
-            url = f"http://{SSE_HOST}:{SSE_PORT}/images/{image_id}.{ext}"
+            protocol = "https" if SSL_ENABLED else "http"
+            url = f"{protocol}://{SSE_HOST}:{SSE_PORT}/images/{image_id}.{ext}"
     else:
         url = Path(target_file).resolve().as_uri()
 
@@ -590,7 +625,25 @@ if __name__ == "__main__":
         _primary_http_mode = True
         # Start background cleanup in primary HTTP mode as well
         start_cleanup_thread_if_needed()
-        uvicorn.run(app, host=SSE_HOST, port=SSE_PORT, log_level="info")
+        
+        # Configure uvicorn with SSL support
+        protocol = "https" if SSL_ENABLED else "http"
+        logger.info("Starting %s server on %s://%s:%s", protocol.upper(), protocol, SSE_HOST, SSE_PORT)
+        
+        uvicorn_kwargs = {
+            "app": app,
+            "host": SSE_HOST,
+            "port": SSE_PORT,
+            "log_level": "info"
+        }
+        
+        # Add SSL configuration if enabled
+        if SSL_ENABLED:
+            uvicorn_kwargs["ssl_certfile"] = SSL_CERT_FILE
+            uvicorn_kwargs["ssl_keyfile"] = SSL_KEY_FILE
+            logger.info("SSL enabled with cert: %s, key: %s", SSL_CERT_FILE, SSL_KEY_FILE)
+        
+        uvicorn.run(**uvicorn_kwargs)
     else:
         # Fallback: run stdio (for environments without HTTP stack)
         logger.info("Starting server in stdio mode")
